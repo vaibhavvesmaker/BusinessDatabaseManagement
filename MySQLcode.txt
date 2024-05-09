@@ -1,0 +1,469 @@
+Part I - Import dataset to MySQL database
+
+CREATE DATABASE IF NOT EXISTS Final_project; 
+USE Final_project;
+CREATE TABLE Superstore (
+Order_ID  VARCHAR (50),
+Order_Date DATE,
+Ship_Date DATE,
+Ship_Mode VARCHAR(50),
+Customer_ID VARCHAR (50),
+First_Name VARCHAR (50),
+Last_Name VARCHAR (50), 
+Segment VARCHAR (50), 
+Country VARCHAR (50), 
+City VARCHAR (50), 
+State VARCHAR (50), 
+Postal_Code INT,
+Region_Name VARCHAR (20),
+Product_ID VARCHAR (100),
+Category_Name VARCHAR (100), 
+Sub_Category VARCHAR (100), 
+Product_Name VARCHAR (255),
+Sales FLOAT (15),
+Quantity INT,
+Discount FLOAT (10),
+Profit FLOAT (15)
+); 
+
+Part II - Data Cleaning
+
+1) Find all customers with no last names in the dataset. 
+
+SELECT Customer_ID, First_Name FROM Superstore
+WHERE Last_Name = ''; 
+
+2) Delete the data for 'Sample A Company' from the database. 
+
+DELETE FROM Superstore
+WHERE First_Name LIKE 'Sample%'; 
+
+3) Update the format of 'Corey-Lock' into First_name and Last_name by using SUBSTRING_INDEX.
+
+
+UPDATE Superstore
+SET First_Name = SUBSTRING_INDEX('Corey-Lock', '-', 1),
+Last_Name = SUBSTRING_INDEX('Corey-Lock', '-', -1)
+WHERE First_Name='Corey-Lock';
+
+4) Adding leading 0 to postal codes that are missing. 
+
+ALTER TABLE Superstore
+MODIFY Postal_Code CHAR(5); 
+
+UPDATE Superstore
+SET Postal_Code = LPAD(Postal_Code, 5, '0')
+WHERE LENGTH(Postal_Code) <5; 
+
+
+5) Identify the Product_ID that are associated with more than one product name and update to assign unique product_ID for each product name in the database. 
+
+SELECT Product_ID, Product_Name
+FROM Superstore
+WHERE Product_ID IN(
+    SELECT Product_ID
+    FROM Superstore
+    GROUP BY Product_ID
+    HAVING COUNT(DISTINCT Product_Name) > 1
+)
+GROUP BY Product_ID, Product_Name
+ORDER BY Product_ID;
+
+
+UPDATE Superstore
+SET Product_ID = CASE
+        WHEN Product_Name = 'Belkin 325VA UPS Surge Protector, 6''' THEN 'OFF-AP-10000576'
+         WHEN Product_Name = 'Belkin 7 Outlet SurgeMaster II' THEN 'OFF-AP-10000776'
+         WHEN Product_Name = 'Avery Arch Ring Binders' THEN 'OFF-BI-10002026'
+         WHEN Product_Name = 'Ibico Recycled Linen-Style Covers' THEN 'OFF-BI-10003026'
+         WHEN Product_Name = 'GBC Binding covers' THEN 'OFF-BI-10004632'
+         WHEN Product_Name = 'Ibico Hi-Tech Manual Binding System' THEN 'OFF-BI-10004633'
+         WHEN Product_Name = 'Xerox 1932' THEN 'OFF-PA-10001166'
+         WHEN Product_Name = 'Xerox 2' THEN 'OFF-PA-10001176'
+         WHEN Product_Name = 'Aastra 6757i CT Wireless VoIP phone' THEN 'TEC-PH-10002200'
+         WHEN Product_Name = 'Samsung Galaxy Note 2' THEN 'TEC-PH-10002220'
+    END
+WHERE Product_ID IN('OFF-AP-10000576', 'OFF-BI-10002026','OFF-BI-10004632','OFF-PA-10001166','TEC-PH-10002200'); 
+
+
+6) Create a new column for Category_ID that identifies each unique sub_category. 
+
+CREATE TABLE category_mapping (
+     Category_ID INT AUTO_INCREMENT PRIMARY KEY, 
+     Sub_Category VARCHAR (100) UNIQUE
+); 
+
+INSERT INTO category_mapping (Sub_Category)
+SELECT DISTINCT Sub_Category
+FROM Superstore; 
+
+ALTER TABLE Superstore
+ADD COLUMN Category_ID INT; 
+
+UPDATE Superstore
+JOIN category_mapping map ON Superstore.Sub_Category = map.Sub_Category
+SET Superstore. Category_ID = map.Category_ID; 
+
+
+Part III - Creation of normalized tables and Indexes in MySQL
+
+
+1) REGION Table 
+
+CREATE TABLE REGION (
+   Postal_Code CHAR (5) PRIMARY KEY,
+   City VARCHAR (50),
+   State VARCHAR (50), 
+   Region_Name VARCHAR (20),
+   Country VARCHAR (50)
+);
+
+INSERT INTO REGION
+SELECT DISTINCT Postal_code, City, State, Region_Name, Country
+FROM Superstore;
+
+2) CUSTOMER Table
+CREATE TABLE CUSTOMER (
+    Customer_ID VARCHAR (50) PRIMARY KEY,
+    First_Name VARCHAR (50),
+    Last_Name VARCHAR (50),
+    Segment VARCHAR (50), 
+    Postal_Code CHAR(5) NOT NULL, 
+    FOREIGN KEY (Postal_Code) REFERENCES REGION (Postal_Code)
+); 
+
+INSERT INTO CUSTOMER
+SELECT DISTINCT Customer_ID, First_Name,Last_Name,Segment,Postal_Code
+FROM Superstore;
+
+3) TRANSACTION Table 
+
+CREATE TABLE TRANSACTION(
+    Order_ID VARCHAR (50) PRIMARY KEY,
+    Order_Date DATE,
+    Ship_Date DATE,
+    Ship_Mode VARCHAR (50),
+    Customer_ID VARCHAR (50) NOT NULL, 
+    FOREIGN KEY (Customer_ID) REFERENCES CUSTOMER (Customer_ID)
+); 
+
+INSERT INTO TRANSACTION
+SELECT DISTINCT Order_ID, Order_Date, Ship_Date, Ship_Mode, Customer_ID
+FROM Superstore;
+
+4) CATEGORY Table
+
+CREATE TABLE CATEGORY (
+   Category_ID INT PRIMARY KEY,
+   Category_Name VARCHAR (100), 
+   Sub_Category VARCHAR (100)
+);
+
+INSERT INTO CATEGORY
+SELECT DISTINCT Category_ID, Category_Name, Sub_Category
+FROM Superstore;
+
+5) PRODUCT Table
+
+CREATE TABLE PRODUCT (
+    Product_ID VARCHAR (100) PRIMARY KEY,
+    Product_Name VARCHAR (255),
+    Category_ID INT NOT NULL,
+    FOREIGN KEY (Category_ID) REFERENCES CATEGORY (Category_ID)
+);
+
+INSERT INTO PRODUCT
+SELECT DISTINCT Product_ID, Product_Name, Category_ID FROM Superstore; 
+
+6) ORDER_ITEM Table 
+
+CREATE TABLE ORDER_ITEM (
+    Order_ID VARCHAR (50),
+    Product_ID VARCHAR (100),
+    Sales DECIMAL (10,2),
+    Quantity INT,
+    Discount DECIMAL (10,2),
+    Profit DECIMAL (10,2),
+    PRIMARY KEY (Order_ID, Product_ID),
+    FOREIGN KEY (Order_ID) REFERENCES TRANSACTION (Order_ID),
+    FOREIGN KEY (Product_ID) REFERENCES PRODUCT (Product_ID)
+);
+
+INSERT INTO ORDER_ITEM
+SELECT Order_ID, Product_ID, SUM(Sales), SUM(Quantity), AVG(Discount), SUM(Profit)
+FROM Superstore
+GROUP BY Order_ID, Product_ID; 
+
+7) Indexes 
+
+CREATE INDEX idx_product_name ON PRODUCT (Product_Name); 
+
+
+
+CREATE INDEX idx_region on REGION (Region_Name); 
+
+
+
+
+Part IV - SQL Questions 
+
+ ## Question 1: Select product names that start with Plantronics. ##
+
+SELECT Product_ID, Product_Name FROM PRODUCT
+WHERE Product_Name LIKE 'Plantronics%'
+
+
+
+
+
+## Question 2: List unique product category. ##
+
+       SELECT DISTINCT Category_Name FROM CATEGORY; 
+
+
+
+
+## Question 3: List all customers who belong to consumer segment and sort them by last name then first name. ##
+
+SELECT Customer_ID, First_Name, Last_Name, Segment
+FROM CUSTOMER
+WHERE Segment = 'Consumer'
+ORDER BY Last_Name, First_Name; 
+
+
+
+
+## Question 4: Provide the total orders placed each day in December 2015. ##
+
+SELECT Order_Date, COUNT(Order_ID) AS Total_Order
+FROM TRANSACTION
+WHERE Order_Date BETWEEN '2015-12-01' AND '2015-12-31'
+GROUP BY Order_Date; 
+
+
+
+
+## Question 5: List the customers who are from the home office and select first class shipping. ##
+
+SELECT DISTINCT CUSTOMER.Customer_ID, First_Name, Last_Name, Segment, Ship_Mode
+FROM CUSTOMER JOIN TRANSACTION ON (CUSTOMER.Customer_ID = TRANSACTION.Customer_ID)
+WHERE Segment = 'Home Office' AND Ship_Mode = 'First Class'; 
+
+                                 
+
+
+
+## Question 6: Calculate the total profit for each category. ##
+
+SELECT Category_Name, SUM(Profit) AS Total_Profit FROM ORDER_ITEM
+  JOIN PRODUCT ON (ORDER_ITEM.Product_ID = PRODUCT.Product_ID)
+  JOIN CATEGORY ON (PRODUCT.Category_ID = CATEGORY.Category_ID)
+GROUP BY Category_Name
+ORDER BY Total_Profit; 
+
+
+## Question 7: Which customers made a total purchase of over $10,000? ##
+
+SELECT CUSTOMER.Customer_ID, First_Name, Last_Name, SUM(Sales) AS Total_Purchase
+FROM CUSTOMER JOIN TRANSACTION ON (CUSTOMER.Customer_ID = TRANSACTION.Customer_ID)
+              JOIN ORDER_ITEM ON (TRANSACTION.Order_ID = ORDER_ITEM.Order_ID)
+GROUP BY Customer_ID, First_Name, Last_Name
+HAVING Total_Purchase > 10000
+ORDER BY Total_Purchase DESC; 
+
+
+
+
+
+## Question 8: Display the top 10 products by sales amount. ##
+
+SELECT Product_Name, SUM(Sales) AS Total_Sales
+FROM PRODUCT JOIN ORDER_ITEM ON (PRODUCT.Product_ID = ORDER_ITEM.Product_ID)
+GROUP BY Product_Name
+ORDER BY Total_Sales DESC 
+LIMIT 10; 
+
+
+
+
+## Question 9: Find the category and sub-category for each product. ##
+
+SELECT Product_Name, Category_Name, Sub_Category FROM CATEGORY 
+RIGHT JOIN PRODUCT ON CATEGORY.Category_ID=PRODUCT.Category_ID; 
+
+
+
+
+
+## Question 10: Find customers who have ordered in all four quarters of a given year. ##
+
+SELECT c.Customer_ID, c.First_Name, c.Last_Name
+   FROM CUSTOMER c
+   JOIN TRANSACTION t ON (c.Customer_ID = t.Customer_ID)
+   WHERE YEAR(t.Order_Date) = '2015'
+   GROUP BY c.Customer_ID
+   HAVING COUNT(DISTINCT QUARTER(t.Order_Date)) = 4;
+
+
+
+
+## Question 11: Find the most profitable product sub-category. ##
+
+SELECT p.Category_ID, c.Category_Name, c.Sub_Category, SUM(oi.Profit) AS Total_Profit 
+FROM Order_Item oi 
+INNER JOIN Product p ON oi.Product_ID = p.Product_ID 
+INNER JOIN Category c ON p.Category_ID = c.Category_ID 
+GROUP BY p.Category_ID, c.Category_Name
+ORDER BY Total_Profit DESC LIMIT 1; 
+
+
+
+
+
+
+## Question 12: Calculate the total sales for each year. ##
+
+SELECT YEAR(Order_Date) AS Order_Year,  SUM(Sales) AS Annual_Total_Sales
+FROM TRANSACTION
+JOIN ORDER_ITEM ON TRANSACTION.Order_ID = TRANSACTION.Order_ID
+GROUP BY Order_Year
+ORDER BY Order_Year DESC
+
+
+## Question 13: Find the category for products that start with product name 'Newell'.
+
+SELECT Category_Name, Sub_Category FROM CATEGORY
+WHERE Category_ID IN (SELECT Category_ID FROM PRODUCT WHERE Product_Name LIKE 'Newell%') 
+
+
+
+
+
+## Question 14: What is the annual average of profit for each category? ##
+
+SELECT c.Category_Name, YEAR(t.Order_Date) AS Year, AVG(oi.Profit) AS Average_Profit
+FROM CATEGORY c
+JOIN PRODUCT p ON c.Category_ID = p.Category_ID
+JOIN ORDER_ITEM oi ON p.Product_ID = oi.Product_ID
+JOIN TRANSACTION t ON oi.Order_ID = t.Order_ID
+GROUP BY c.Category_Name, YEAR(t.Order_Date);
+
+
+
+
+
+
+## Question 15: List the total of orders placed on the weekdays and weekends. ##
+
+SELECT SUM(CASE WHEN Weekday(Order_Date) > 4 THEN 1 ELSE 0 END) AS Total_Weekend_Order,
+       SUM(CASE WHEN Weekday(Order_Date) < 4 THEN 1 ELSE 0 END) AS Total_Weekday_Order
+FROM ORDER_ITEM JOIN TRANSACTION ON TRANSACTION.Order_ID = ORDER_ITEM.Order_ID; 
+
+
+
+
+## Question 16: The average sales and quantity sold by each state. ##
+
+SELECT r.State, AVG(oi.Sales) AS Average_Sales, AVG(oi.Quantity) AS Average_Quantity
+FROM REGION r
+JOIN CUSTOMER c ON r.Postal_Code = c.Postal_Code
+JOIN TRANSACTION t ON c.Customer_ID = t.Customer_ID
+JOIN ORDER_ITEM oi ON t.Order_ID = oi.Order_ID
+GROUP BY r.State;
+
+
+
+
+
+## Question 17: Identify the customers who have ordered the same products to discover customer preference and need . ##
+
+SELECT c1.Customer_ID AS Customer1, c2.Customer_ID AS Customer2, COUNT(*) AS Shared_Product_Count
+
+
+
+
+## Question 18: Find products that were purchased together frequently. ## 
+
+SELECT p1.Product_Name AS Product1, p2.Product_Name AS Product2, COUNT(*) AS Times_Bought_Together
+FROM ORDER_ITEM oi1
+JOIN ORDER_ITEM oi2 ON oi1.Order_ID = oi2.Order_ID AND oi1.Product_ID < oi2.Product_ID
+JOIN PRODUCT p1 ON oi1.Product_ID = p1.Product_ID
+JOIN PRODUCT p2 ON oi2.Product_ID = p2.Product_ID
+GROUP BY p1.Product_Name, p2.Product_Name
+ORDER BY Times_Bought_Together DESC
+LIMIT 10;
+
+
+
+
+
+## Question 19: The average percentage of discount for each sub_category. ##
+
+SELECT c.Sub_Category, CONCAT(ROUND(AVG(oi.Discount) * 100, 2), '%') AS Average_Discount_Percentage
+FROM CATEGORY c
+JOIN PRODUCT p ON c.Category_ID = p.Category_ID
+JOIN ORDER_ITEM oi ON p.Product_ID = oi.Product_ID
+GROUP BY c.Sub_Category
+ORDER BY AVG(oi.Discount); 
+
+
+
+## Question 20: Total number of orders for each sub-category within each category. ##
+
+SELECT c.Category_Name,c.Sub_Category, COUNT(DISTINCT oi.Order_ID) AS Total_Orders
+FROM CATEGORY c 
+JOIN PRODUCT p ON c.Category_ID = p.Category_ID
+JOIN ORDER_ITEM oi ON p.Product_ID = oi.Product_ID
+GROUP BY c.Category_Name,c.Sub_Category
+ORDER BY c.Category_Name, Total_Orders DESC;
+
+
+
+## Question 21: The number of orders for each sub-category by region. ##
+
+SELECT r.Region_Name, cat.Category_Name, cat.Sub_Category, COUNT(DISTINCT oi.Order_ID) AS Total_Orders FROM REGION r 
+  JOIN CUSTOMER c ON r.Postal_Code = c.Postal_Code 
+  JOIN TRANSACTION t ON c.Customer_ID = t.Customer_ID 
+  JOIN ORDER_ITEM oi ON t.Order_ID = oi.Order_ID 
+  JOIN PRODUCT p ON oi.Product_ID = p.Product_ID 
+  JOIN CATEGORY cat ON p.Category_ID = cat.Category_ID 
+GROUP BY r.Region_Name, cat.Category_Name, cat.Sub_Category 
+ORDER BY r.Region_Name, cat.Category_Name, Total_Orders DESC;
+
+
+
+
+
+## Question 22: The daily increase of sales compared to the prior day of sales. ##
+
+SELECT (CASE when day = 6 then 'Sunday'
+             when day = 0 then 'Monday'
+             when day = 1 then 'Tuesday'
+             when day = 2 then 'Wednesday'
+             when day = 3 then 'Thursday'
+             when day = 4 then 'Friday'
+             when day = 5 then 'Saturday'
+        end) as DayOfWeek, Sales_increase
+FROM (
+SELECT Weekday(t2.Order_Date) as day,  AVG(t2.Sales - t1.Sales) as Sales_increase
+FROM
+(
+    SELECT Order_Date, Sales
+    FROM ORDER_ITEM
+    JOIN TRANSACTION ON TRANSACTION.Order_ID = ORDER_ITEM.Order_ID
+) t1 LEFT join 
+(
+    SELECT Order_Date, Sales
+    FROM ORDER_ITEM
+    JOIN TRANSACTION ON TRANSACTION.Order_ID = ORDER_ITEM.Order_ID
+) t2
+on DATE_ADD(t1.Order_Date, INTERVAL 1 DAY) = t2.Order_Date
+GROUP BY Weekday(t2.Order_Date)
+) tmp
+WHERE Sales_increase IS NOT NULL;
+
+
+
+
+
+
