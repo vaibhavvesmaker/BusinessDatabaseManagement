@@ -2,7 +2,7 @@
 
 This repository contains SQL scripts for importing, cleaning, and analyzing data from the Superstore dataset in MySQL. The dataset consists of information about orders, customers, products, and transactions.
  
-## Contents
+## Contents 
 
 1. [Import dataset to MySQL database](#import-dataset-to-mysql-database)
 2. [Data Cleaning](#data-cleaning)
