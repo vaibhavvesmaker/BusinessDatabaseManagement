@@ -6,7 +6,7 @@ This repository contains SQL scripts for importing, cleaning, and analyzing data
 
 1. [Import dataset to MySQL database](#import-dataset-to-mysql-database)
 2. [Data Cleaning](#data-cleaning)
-3. [Creation of normalized tables and Indexes in MySQL](#creation-of-normalized-tables-and-indexes-in-mysql)
+3. [Creation of normalized tables and Indexes in MySQL](#creation-of-normalized-tables-and-indexes-in-mysql) 
 4. [SQL Questions](#sql-questions)
 
 ## Import dataset to MySQL database
