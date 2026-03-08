@@ -1,5 +1,5 @@
 # MySQL Data Management and Analysis Superstore Dataset
-
+ 
 This repository contains SQL scripts for importing, cleaning, and analyzing data from the Superstore dataset in MySQL. The dataset consists of information about orders, customers, products, and transactions. 
      
 ## Contents   
